@@ -1,0 +1,127 @@
+# from __future__ import print_function, division
+import os
+import numpy as np
+import csv
+import string
+import torch
+import matplotlib.pyplot as plt
+from torch import optim, nn
+from torch.utils.data import TensorDataset, DataLoader
+from torchvision import transforms, utils
+import functools
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+
+trainfile = "/home/drillthewall/KAUST/SemEval2018-Task1-all-data/English/E-c/2018-E-c-En-train.txt"
+testfile = "/home/drillthewall/KAUST/SemEval2018-Task1-all-data/English/E-c/2018-E-c-En-dev.txt"
+
+def file_to_data(file):
+    with open(file) as f:
+        reader = csv.reader(f, delimiter="\t")
+        data = list(reader)
+    return data
+
+traindata = file_to_data(trainfile)
+
+table = str.maketrans(dict.fromkeys(string.punctuation))  # OR {key: None for key in string.punctuation}
+# new_s = s.translate(table)   
+
+@lru_cache
+def get_all_tweets(data): 
+    return [d[1].lower().translate(table) for d in data]
+
+lexicon = []
+count = dict()
+all_tweets = get_all_tweets(traindata)
+
+for tweet in all_tweets:
+    for word in tweet.split():
+        if word not in lexicon:
+            lexicon.append(word)
+            count[word] = 1
+        else:
+            count[word] += 1
+
+cpy = []
+for word in lexicon:
+    if count[word] >= 3:
+        cpy.append(word)
+lexicon = cpy
+
+def get_tweet_tensors(data):
+    tweet_tensors = []
+    for tweet in get_all_tweets(data)[1:]:
+        tensor = torch.zeros(len(lexicon))
+        for word in tweet.split():
+            if word in lexicon:
+                tensor[lexicon.index(word)] += 1
+        tweet_tensors.append(tensor)
+    return tweet_tensors
+
+def get_label_tensors(data):
+    label_tensors = []
+    for d in data[1:]:
+        tmp = torch.zeros(11)
+        for i in range(11):
+            if d[2 + i] == '1':
+                tmp[i] = 1
+        label_tensors.append(tmp)
+    return label_tensors
+
+# label_tensors = [np.array(d[2:]) for d in data[1:]]
+# label_tensors = []
+
+tweet_tensors = get_tweet_tensors(traindata)
+tweet_tensors = get_label_tensors(traindata)
+assert len(tweet_tensors) == len(label_tensors)
+
+train_dataset = TensorDataset(torch.stack(tweet_tensors), torch.stack(label_tensors))
+train_dataloader = DataLoader(train_dataset, batch_size=10, shuffle=True)
+
+class NN(nn.Module):
+    def __init__(self):
+        super(NN, self).__init__()
+        self.f1 = nn.Linear(len(lexicon), 256)
+        self.relu = nn.ReLU()
+        self.f2 = nn.Linear(256, 11)
+    def forward(self, x):
+        x = self.f1(x)
+        x = self.relu(x)
+        x = self.f2(x)
+        # x = nn.Softmax(dim=1)(x)
+        return x
+
+net = NN()
+net.to(device)
+loss_function = nn.BCEWithLogitsLoss()
+optimizer = optim.Adam(net.parameters(), lr=0.01)
+
+
+loss_diagram = []
+num_epochs = 3
+cnt = 0
+running_loss = 0
+for i in range(num_epochs):
+    for X, Y in train_dataloader:
+        cnt += 1
+        l = loss_function(net(X), Y)
+        optimizer.zero_grad()
+        l.backward()
+        optimizer.step()
+        running_loss += l
+        if (cnt % 50 == 0):
+            print(l/50)
+            loss_diagram.append(running_loss)
+            running_loss = 0
+
+testdata = file_to_data()
+
+
+
+
+
+
+# traindata_raw = np.array(d)
+# traindata_raw = torch.from_numpy(traindata_raw)
+# tweets_traindata = traindata_raw[:, 1]
