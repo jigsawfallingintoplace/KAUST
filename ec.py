@@ -8,13 +8,14 @@ import matplotlib.pyplot as plt
 from torch import optim, nn
 from torch.utils.data import TensorDataset, DataLoader
 from torchvision import transforms, utils
-import functools
+from functools import lru_cache
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 
 trainfile = "/home/drillthewall/KAUST/SemEval2018-Task1-all-data/English/E-c/2018-E-c-En-train.txt"
 testfile = "/home/drillthewall/KAUST/SemEval2018-Task1-all-data/English/E-c/2018-E-c-En-dev.txt"
+savepath = "/home/drillthewall/KAUST/1nn.pt"
 
 def file_to_data(file):
     with open(file) as f:
@@ -27,7 +28,6 @@ traindata = file_to_data(trainfile)
 table = str.maketrans(dict.fromkeys(string.punctuation))  # OR {key: None for key in string.punctuation}
 # new_s = s.translate(table)   
 
-@lru_cache
 def get_all_tweets(data): 
     return [d[1].lower().translate(table) for d in data]
 
@@ -73,7 +73,7 @@ def get_label_tensors(data):
 # label_tensors = []
 
 tweet_tensors = get_tweet_tensors(traindata)
-tweet_tensors = get_label_tensors(traindata)
+label_tensors = get_label_tensors(traindata)
 assert len(tweet_tensors) == len(label_tensors)
 
 train_dataset = TensorDataset(torch.stack(tweet_tensors), torch.stack(label_tensors))
@@ -115,7 +115,28 @@ for i in range(num_epochs):
             loss_diagram.append(running_loss)
             running_loss = 0
 
-testdata = file_to_data()
+torch.save(net.state_dict(), savepath)
+
+testdata = file_to_data(testfile)
+test_tweet_tensors = get_tweet_tensors(testdata)
+test_label_tensors = get_label_tensors(testdata)
+assert len(test_tweet_tensors) == len(test_label_tensors)
+
+test_running_loss = 0
+total_loss = 0
+cnt = 0
+for x, y in zip(test_tweet_tensors, test_label_tensors):
+    cnt += 1
+    guess = net(x)
+    l = loss_function(guess, y)
+    test_running_loss += l
+    total_loss += l
+    if (cnt % 100 == 0):
+        print(guess)
+        print(y)
+        print("--------")
+
+print("FINAL RESULT:", total_loss)
 
 
 
