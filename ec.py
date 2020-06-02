@@ -69,9 +69,6 @@ def get_label_tensors(data):
         label_tensors.append(tmp)
     return label_tensors
 
-# label_tensors = [np.array(d[2:]) for d in data[1:]]
-# label_tensors = []
-
 tweet_tensors = get_tweet_tensors(traindata)
 label_tensors = get_label_tensors(traindata)
 assert len(tweet_tensors) == len(label_tensors)
@@ -82,20 +79,44 @@ train_dataloader = DataLoader(train_dataset, batch_size=10, shuffle=True)
 class NN(nn.Module):
     def __init__(self):
         super(NN, self).__init__()
-        self.f1 = nn.Linear(len(lexicon), 256)
+        # self.f1 = nn.Linear(len(lexicon), 256)
+        # self.relu = nn.ReLU()
+        # self.f2 = nn.Linear(256, 11)
+        self.layer_1 = nn.Linear(len(lexicon), 512)
+        self.layer_2 = nn.Linear(512, 128)
+        self.layer_3 = nn.Linear(128, 64)
+        self.layer_out = nn.Linear(64, 11) 
+        
         self.relu = nn.ReLU()
-        self.f2 = nn.Linear(256, 11)
+        self.dropout = nn.Dropout(p=0.2)
+        self.batchnorm1 = nn.BatchNorm1d(512)
+        self.batchnorm2 = nn.BatchNorm1d(128)
+        self.batchnorm3 = nn.BatchNorm1d(64)
     def forward(self, x):
-        x = self.f1(x)
+        x = self.layer_1(x)
+        x = self.batchnorm1(x)
         x = self.relu(x)
-        x = self.f2(x)
+        
+        x = self.layer_2(x)
+        x = self.batchnorm2(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        
+        x = self.layer_3(x)
+        x = self.batchnorm3(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        
+        x = self.layer_out(x)
         # x = nn.Softmax(dim=1)(x)
         return x
 
 net = NN()
 net.to(device)
 loss_function = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(net.parameters(), lr=0.01)
+optimizer = optim.Adam(net.parameters(), lr=0.005)
+
+net.load_state_dict(torch.load(savepath))
 
 
 loss_diagram = []
@@ -111,7 +132,7 @@ for i in range(num_epochs):
         optimizer.step()
         running_loss += l
         if (cnt % 50 == 0):
-            print(l/50)
+            print(l.item()/50)
             loss_diagram.append(running_loss)
             running_loss = 0
 
@@ -122,21 +143,24 @@ test_tweet_tensors = get_tweet_tensors(testdata)
 test_label_tensors = get_label_tensors(testdata)
 assert len(test_tweet_tensors) == len(test_label_tensors)
 
+test_dataset = TensorDataset(torch.stack(test_tweet_tensors), torch.stack(test_label_tensors))
+test_dataloader = DataLoader(test_dataset, batch_size=10, shuffle=True)
+
 test_running_loss = 0
 total_loss = 0
 cnt = 0
-for x, y in zip(test_tweet_tensors, test_label_tensors):
+for x, y in test_dataloader:
     cnt += 1
     guess = net(x)
     l = loss_function(guess, y)
     test_running_loss += l
     total_loss += l
-    if (cnt % 100 == 0):
-        print(guess)
-        print(y)
+    if (cnt % 10 == 0):
+        print(guess[0])
+        print(y[0])
         print("--------")
 
-print("FINAL RESULT:", total_loss)
+print("FINAL RESULT:", total_loss.item())
 
 
 
